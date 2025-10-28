@@ -9,16 +9,19 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as route53Targets from "aws-cdk-lib/aws-route53-targets";
+import * as ssm from "aws-cdk-lib/aws-ssm";
+import * as logs from "aws-cdk-lib/aws-logs";
 
 interface SmartSchoolsOtpServiceStackProps extends cdk.StackProps {
   environment: string;
+  domainName: string;
 }
 
 export class SmartSchoolsOtpServiceStack extends cdk.Stack {
   constructor(
     scope: Construct,
     id: string,
-    props?: SmartSchoolsOtpServiceStackProps
+    props: SmartSchoolsOtpServiceStackProps
   ) {
     super(scope, id, props);
 
@@ -31,12 +34,13 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: "expires",
-      tableName: `otp_table_${props?.environment}`,
+      tableName: `${props.environment}_otp_table`,
     });
 
     // Secret for JWT
+
     const jwtSecret = new secretsmanager.Secret(this, "JwtSecret", {
-      secretName: "smartschools/jwt-secret",
+      secretName: `${props.environment}_smartschools/jwt-secret`,
       generateSecretString: {
         secretStringTemplate: JSON.stringify({}),
         generateStringKey: "key",
@@ -46,13 +50,18 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
     });
 
     // API Gateway
+    // Read allowed origins from an SSM parameter. The parameter value can be a JSON array
+    // (e.g. ["https://app.example.com"]), or a comma-separated string of origins.
+    const schoolOriginsParam: string[] =
+      ssm.StringListParameter.valueForTypedListParameter(
+        this,
+        `/${props.environment}/auth/cors/allowed_origins`
+      );
+
     const api = new apigateway.RestApi(this, "AuthApi", {
-      restApiName: "SmartSchools Auth Service",
+      restApiName: `${props.environment} Auth Service`,
       defaultCorsPreflightOptions: {
-        allowOrigins: [
-          "https://smartskools.online",
-          "https://admin.smartskools.online",
-        ],
+        allowOrigins: [...schoolOriginsParam.map((origin) => origin.trim())],
         allowMethods: apigateway.Cors.ALL_METHODS,
       },
     });
@@ -61,25 +70,41 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
     const requestOtpLambda = new NodejsFunction(this, "RequestOtpHandler", {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: "lambda/auth-request-otp/index.ts",
+      functionName: `${props.environment}-RequestOtpHandler`,
+      memorySize: 128,
       handler: "handler",
       environment: {
         OTP_TABLE_NAME: otpTable.tableName,
         FROM_EMAIL_ADDRESS:
-          process.env.FROM_EMAIL_ADDRESS || "noreply@smartskools.online", // Configure a verified SES email
+          props.environment === "prod"
+            ? `noreply@${props.domainName}`
+            : `${props.environment}_noreply@${props.domainName}`,
       },
-      timeout: cdk.Duration.seconds(100),
+      timeout: cdk.Duration.seconds(10),
+      logGroup: new logs.LogGroup(this, "RequestOtpLogGroup", {
+        logGroupName: `/aws/lambda/${props.environment}-RequestOtpHandler`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
 
     // Lambda for verifying OTP and generating JWT
     const verifyOtpLambda = new NodejsFunction(this, "VerifyOtpHandler", {
       runtime: lambda.Runtime.NODEJS_22_X,
+      memorySize: 128,
       entry: "lambda/auth-verify-otp/index.ts",
+      functionName: `${props.environment}-VerifyOtpHandler`,
       handler: "handler",
       environment: {
         OTP_TABLE_NAME: otpTable.tableName,
         JWT_SECRET_ARN: jwtSecret.secretArn,
       },
-      timeout: cdk.Duration.seconds(100),
+      timeout: cdk.Duration.seconds(10),
+      logGroup: new logs.LogGroup(this, "VerifyOtpLogGroup", {
+        logGroupName: `/aws/lambda/${props.environment}-VerifyOtpHandler`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
 
     // Grant permissions
@@ -123,19 +148,33 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
     const authorizerLambda = new NodejsFunction(this, "JwtAuthorizerLambda", {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: "lambda/auth-jwt-authorizer/index.ts",
+      functionName: `${props.environment}-JwtAuthorizerLambda`,
+      memorySize: 128,
       handler: "handler",
       environment: {
         JWT_SECRET_ARN: jwtSecret.secretArn,
       },
+      timeout: cdk.Duration.seconds(10),
+      logGroup: new logs.LogGroup(this, "JwtAuthorizerLogGroup", {
+        logGroupName: `/aws/lambda/${props.environment}-JwtAuthorizerLambda`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
     jwtSecret.grantRead(authorizerLambda);
 
+    // Create explicit CloudWatch LogGroups for the Lambdas with 7-day retention.
+    // This ensures logs are retained for a limited time instead of indefinitely.
+
     // Route 53, ACM, and Custom Domain for API Gateway
-    const domainName = "auth.smartskools.online";
+    const domainName =
+      props.environment === "prod"
+        ? `auth.${props.domainName}`
+        : `${props.environment}.auth.${props.domainName}`;
 
     // Look up the hosted zone
     const hostedZone = route53.HostedZone.fromLookup(this, "HostedZone", {
-      domainName: "smartskools.online",
+      domainName: props.domainName,
     });
 
     // Create a certificate
