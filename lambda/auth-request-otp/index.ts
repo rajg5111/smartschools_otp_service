@@ -82,7 +82,7 @@ async function sendOtpEmail(emailOrPhone: any, otp: string) {
       ToAddresses: [emailOrPhone],
     },
     Message: {
-      Subject: { Data: "Your SmartSchools Admin Portal OTP" },
+      Subject: { Data: "Smartschools Login OTP" },
       Body: {
         Text: { Data: `Your One-Time Password is: ${otp}` },
       },
