@@ -163,6 +163,17 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
     });
     jwtSecret.grantRead(authorizerLambda);
 
+    // Publish authorizer Lambda ARN into SSM so other stacks can consume it
+    new ssm.StringParameter(this, "AuthorizerLambdaArnParam", {
+      parameterName: `/${props.environment}/auth/authorizer_lambda_arn`,
+      stringValue: authorizerLambda.functionArn,
+      description: "ARN of the OTP service JWT authorizer Lambda",
+    });
+
+    new cdk.CfnOutput(this, "AuthorizerLambdaArn", {
+      value: authorizerLambda.functionArn,
+    });
+
     // Create explicit CloudWatch LogGroups for the Lambdas with 7-day retention.
     // This ensures logs are retained for a limited time instead of indefinitely.
 
