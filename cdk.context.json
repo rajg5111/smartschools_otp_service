@@ -2,5 +2,6 @@
   "hosted-zone:account=803356296989:domainName=smartskools.online:region=ap-southeast-2": {
     "Id": "/hostedzone/Z0792706NGU1M90OLI4T",
     "Name": "smartskools.online."
-  }
+  },
+  "ssm:account=803356296989:parameterName=/dev/auth/cors/allowed_origins:region=ap-southeast-2": "\"https://dev.smartskools.online\""
 }
