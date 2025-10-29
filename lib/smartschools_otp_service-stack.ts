@@ -52,16 +52,37 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
     // API Gateway
     // Read allowed origins from an SSM parameter. The parameter value can be a JSON array
     // (e.g. ["https://app.example.com"]), or a comma-separated string of origins.
-    const schoolOriginsParam: string[] =
-      ssm.StringListParameter.valueForTypedListParameter(
-        this,
-        `/${props.environment}/auth/cors/allowed_origins`
-      );
+    // Read allowed origins from SSM as a single string value (JSON array or comma-separated).
+    // Use `valueFromLookup` so the parameter is resolved at synth time and we get a concrete
+    // string to parse into a JS array (avoids encoded list token errors at synth time).
+    const rawOrigins = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${props.environment}/auth/cors/allowed_origins`
+    );
+
+    let schoolOrigins: string[] = [];
+    try {
+      const parsed = JSON.parse(rawOrigins);
+      if (Array.isArray(parsed)) {
+        schoolOrigins = parsed.map((v) => String(v).trim()).filter(Boolean);
+      } else {
+        schoolOrigins = String(parsed)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+    } catch (e) {
+      // not valid JSON — treat as comma-separated list
+      schoolOrigins = String(rawOrigins)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
 
     const api = new apigateway.RestApi(this, "AuthApi", {
       restApiName: `${props.environment} Auth Service`,
       defaultCorsPreflightOptions: {
-        allowOrigins: [...schoolOriginsParam.map((origin) => origin.trim())],
+        allowOrigins: [...schoolOrigins],
         allowMethods: apigateway.Cors.ALL_METHODS,
       },
     });

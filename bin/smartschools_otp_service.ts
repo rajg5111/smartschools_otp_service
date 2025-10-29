@@ -42,5 +42,5 @@ const app = new cdk.App();
 new SmartSchoolsOtpServiceStack(app, stackName, {
   environment: context.environment,
   domainName: context.domainName,
-  // env: { account: context.account, region: context.region },
+  env: { account: context.account, region: context.region },
 });
