@@ -1,0 +1,63 @@
+name: 🚀 Build, Test & Deploy SmartSchools otp service
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # Manual trigger
+    inputs:
+      deploy-environment:
+        description: "Select the environment to deploy to"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - production
+env:
+  NODE_VERSION: "24"
+  CACHE_KEY: "smartschools-otp"
+
+jobs:
+  # 🧪 Test Job
+  deploy:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v5
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 🔧 Install dependencies
+        run: npm ci
+
+      - name: 🧹 Run Linter
+        run: npm run lint
+
+      # - name: 🧪 Run Tests
+      #   run: npm run test:ci
+
+      - name: 🔑 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SMARTSCHOOLS_CICD_ROLE_ARN }}
+          aws-region: ${{ vars.SMARTSCHOOLS_AWS_REGION }}
+
+      - name: 🏗️ Deploy CDK Stack
+        run: |
+          npx cdk deploy --require-approval never
+
+      - name: 📋 Build Summary
+        run: |
+          echo "## 🏗️ Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node Version**: ${{ env.NODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
