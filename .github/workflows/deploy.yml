@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - dev
-          - production
+          - prod
 env:
   NODE_VERSION: "24"
   CACHE_KEY: "smartschools-otp"
@@ -27,6 +27,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    environment: ${{ github.event.inputs.deploy-environment || 'dev' }}
 
     steps:
       - name: 📥 Checkout code
@@ -52,11 +53,13 @@ jobs:
         with:
           role-to-assume: ${{ secrets.SMARTSCHOOLS_CICD_ROLE_ARN }}
           aws-region: ${{ vars.SMARTSCHOOLS_AWS_REGION }}
-
+        id: aws-creds
       - name: 🏗️ Deploy CDK Stack
         env: 
-          SMARTSCHOOLS_DOMAIN_NAME: ${{ secrets.SMARTSCHOOLS_DOMAIN_NAME }}
-        
+          SMARTSCHOOLS_DOMAIN_NAME: ${{ vars.SMARTSCHOOLS_DOMAIN_NAME }}
+          SMARTSCHOOLS_AWS_ENVIRONMENT: ${{ github.event.inputs.deploy-environment || 'dev' }}
+          SMARTSCHOOLS_AWS_ACCOUNT: ${{ steps.aws-creds.outputs.aws-account-id }}
+          SMARTSCHOOLS_AWS_REGION: ${{ vars.SMARTSCHOOLS_AWS_REGION }}
         run: |
           npx cdk deploy --require-approval never
 
