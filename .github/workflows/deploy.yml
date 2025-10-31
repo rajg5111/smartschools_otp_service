@@ -22,7 +22,7 @@ env:
 jobs:
   # 🧪 Test Job
   deploy:
-    name: 🧪 Run Tests
+    name: 🧪 Deploy changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,6 +54,9 @@ jobs:
           aws-region: ${{ vars.SMARTSCHOOLS_AWS_REGION }}
 
       - name: 🏗️ Deploy CDK Stack
+        env: 
+          SMARTSCHOOLS_DOMAIN_NAME: ${{ secrets.SMARTSCHOOLS_DOMAIN_NAME }}
+        
         run: |
           npx cdk deploy --require-approval never
 
