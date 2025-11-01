@@ -231,7 +231,7 @@ export class SmartSchoolsOtpServiceStack extends cdk.Stack {
     // Create a Route 53 A record
     new route53.ARecord(this, "ApiARecord", {
       zone: hostedZone,
-      recordName: `${props.environment}.auth`,
+      recordName: `auth.${props.environment}`,
       target: route53.RecordTarget.fromAlias(
         new route53Targets.ApiGatewayDomain(customDomain)
       ),
